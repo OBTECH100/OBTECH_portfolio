@@ -578,11 +578,11 @@ export default function About() {
               </h1>
               <h2 style={{ fontSize:"clamp(14px,2.5vw,22px)", fontWeight:600, color:ORANGE,
                 margin:"0 0 20px", fontFamily:"'Space Grotesk',sans-serif" }}>
-                Software Developer &amp; AI Engineer
+                Fullstack Developer | AI &amp; Mobile Innovator
               </h2>
               <p style={{ fontSize:"clamp(13px,1.7vw,15px)", color:"#888", lineHeight:1.85,
                 maxWidth:540, margin: isMobile?"0 auto 12px":"0 0 12px" }}>
-                A professionally experienced Software Developer with a proven track record across backend systems, frontend interfaces, mobile applications, and AI engineering. Based in Lagos, Nigeria.
+                A professionally experienced Software Developer with a proven track record across backend systems, frontend interfaces, mobile applications, and AI engineering. Based in Ogun State, Nigeria.
               </p>
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:24,
                 justifyContent: isMobile?"center":"flex-start" }}>
@@ -610,9 +610,9 @@ export default function About() {
                 justifyContent: isMobile?"center":"flex-start" }}>
                 <span style={{ fontSize:11, color:"#444" }}>Connect:</span>
                 {[
-                  {href:"https://github.com",   icon:<GithubIcon size={14}/>,   label:"GitHub"},
-                  {href:"https://linkedin.com", icon:<LinkedInIcon size={14}/>, label:"LinkedIn"},
-                  {href:"mailto:adekoyaboluwatife@gmail.com", icon:<MailIcon size={14}/>, label:"Email"},
+                  {href:"https://github.com/OBTECH100",   icon:<GithubIcon size={14}/>,   label:"GitHub"},
+                  {href:"https://linkedin.com/in/oluwasegun-boluwatife-9103a9289", icon:<LinkedInIcon size={14}/>, label:"LinkedIn"},
+                  {href:"mailto:obtech100@gmail.com", icon:<MailIcon size={14}/>, label:"Email"},
                 ].map(({href,icon,label})=>(
                   <a key={label} href={href} title={label} style={{ width:34, height:34, borderRadius:8,
                     border:"1px solid #2a2a2a", background:"#111", display:"flex", alignItems:"center",
@@ -627,8 +627,8 @@ export default function About() {
             {/* Avatar */}
             <div style={{ flex:"0 0 auto", display:"flex", justifyContent:"center", animation:"fade-up .75s ease .15s both" }}>
               <div style={{ position:"relative",
-                width:isMobile?"180px":"clamp(400px,22vw,240px)",
-                height:isMobile?"180px":"clamp(400px,22vw,240px)" }}>
+                width:isMobile?"300px":"clamp(400px,22vw,240px)",
+                height:isMobile?"300px":"clamp(400px,22vw,240px)" }}>
                 {[1,2].map(i=>(
                   <div key={i} style={{ position:"absolute", inset:-i*10, borderRadius:"50%",
                     border:`1px solid ${ORANGE}`, animation:`pulse-ring ${1.8+i*.6}s ease-out ${i*.4}s infinite`, opacity:0 }} />
@@ -719,7 +719,7 @@ export default function About() {
                   {[
                     ["Full Name",    "Adekoya Oluwasegun Boluwatife"],
                     ["Title",        "Software Developer & AI Engineer"],
-                    // ["Location",     "Lagos, Nigeria"],
+                    // ["Location",     "Ogun State, Nigeria"],
                     ["Status",       "Working Professionally"],
                     ["Availability", "Open to New Engagements"],
                     ["Experience",   "4+ Years"],
