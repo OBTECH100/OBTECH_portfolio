@@ -2,125 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { PageWrapper, Footer } from "../components/shared";
 import { ORANGE } from "../data";
-import emailjs from "@emailjs/browser";
-
-const EMAILJS_SERVICE_ID    = "service_j21vfl7";
-const EMAILJS_TEMPLATE_ID   = "template_sred8ef";
-const EMAILJS_AUTOREPLY_ID  = "template_3sn48ka";
-const EMAILJS_PUBLIC_KEY    = "JnNVS5XUsZwFcXnoU";
-
-// ── Validation helpers ─────────────────────────────
-
-// Levenshtein distance algorithm — measures edit distance between two strings
-const levenshtein = (a, b) => {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-  return dp[m][n];
-};
-
-// Gmail-specific explicit extras (levenshtein alone misses these)
-const GMAIL_EXTRA = new Set(["gmail.net", "gmail.org", "gmail.io"]);
-
-// Catches ALL misspellings of gmail.com algorithmically (301+ variants)
-const isGmailTypo = domain => {
-  if (domain === "gmail.com") return false;
-  if (GMAIL_EXTRA.has(domain)) return true;
-  const dotIdx   = domain.lastIndexOf(".");
-  const name     = domain.slice(0, dotIdx);
-  const tld      = domain.slice(dotIdx + 1);
-  const nameDist = levenshtein(name, "gmail");
-  const tldDist  = levenshtein(tld, "com");
-  return (nameDist <= 2 && tldDist <= 1) ||
-         (nameDist === 0 && tldDist <= 2) ||
-         (nameDist <= 1 && tld === "com");
-};
-
-// Typo map for other major providers
-const PROVIDER_TYPOS = {
-  // yahoo
-  "yaho.com": "yahoo.com", "yahooo.com": "yahoo.com", "yhaoo.com": "yahoo.com",
-  "yaoo.com": "yahoo.com", "yahoo.co": "yahoo.com", "yahoo.cm": "yahoo.com",
-  "yahoo.con": "yahoo.com", "yahoo.c": "yahoo.com", "yhoo.com": "yahoo.com",
-  // hotmail
-  "hotmai.com": "hotmail.com", "hotmial.com": "hotmail.com", "hotmal.com": "hotmail.com",
-  "hotmali.com": "hotmail.com", "homail.com": "hotmail.com", "hotmil.com": "hotmail.com",
-  "hotmail.co": "hotmail.com", "hotmail.c": "hotmail.com", "hotmil.com": "hotmail.com",
-  // outlook
-  "outlok.com": "outlook.com", "outloo.com": "outlook.com", "outloook.com": "outlook.com",
-  "outlook.co": "outlook.com", "outlook.c": "outlook.com", "outlookk.com": "outlook.com",
-  // icloud
-  "iclod.com": "icloud.com", "icoud.com": "icloud.com",
-  "iclould.com": "icloud.com", "icloud.co": "icloud.com",
-};
-
-// Blocked disposable / throwaway domains
-const BLOCKED_DOMAINS = new Set([
-  "mailinator.com","guerrillamail.com","tempmail.com","throwam.com",
-  "sharklasers.com","guerrillamailblock.com","grr.la","guerrillamail.info",
-  "spam4.me","trashmail.com","trashmail.me","yopmail.com","maildrop.cc",
-  "dispostable.com","fakeinbox.com","temp-mail.org","getairmail.com",
-  "mohmal.com","mintemail.com","discard.email","mailnull.com","spamgourmet.com",
-  "mail.com","email.com","usa.com","myself.com","inbox.com",
-]);
-
-// Other known providers for fuzzy matching
-const OTHER_PROVIDERS = [
-  "yahoo.com","hotmail.com","outlook.com","icloud.com","live.com","protonmail.com","me.com",
-];
-
-const isValidEmail = v => {
-  const raw = v.trim();
-
-  // 1. Block any uppercase letters
-  if (raw !== raw.toLowerCase()) {
-    return { valid: false, msg: "Email must be in lowercase. Please remove uppercase letters." };
-  }
-
-  const email = raw.toLowerCase();
-
-  // 2. Basic format — must match user@domain.tld
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { valid: false, msg: "Please enter a valid email address." };
-  }
-
-  const [user, domain] = email.split("@");
-  const tld = domain.split(".").pop();
-
-  // 3. TLD must be 2+ real letters, not digits-only
-  if (tld.length < 2 || /^[0-9]+$/.test(tld)) {
-    return { valid: false, msg: "Please enter a valid email address." };
-  }
-
-  // 4. Blocked / disposable domain
-  if (BLOCKED_DOMAINS.has(domain)) {
-    return { valid: false, msg: "Disposable email addresses are not accepted. Please use your real email." };
-  }
-
-  // 5. Gmail typo check — catches ALL 301+ misspellings algorithmically
-  if (isGmailTypo(domain)) {
-    return { valid: false, msg: `Did you mean ${user}@gmail.com?` };
-  }
-
-  // 6. Other provider typo map
-  if (PROVIDER_TYPOS[domain]) {
-    return { valid: false, msg: `Did you mean ${user}@${PROVIDER_TYPOS[domain]}?` };
-  }
-
-  // 7. Fuzzy match other providers (1 edit away)
-  for (const known of OTHER_PROVIDERS) {
-    if (domain !== known && levenshtein(domain, known) === 1) {
-      return { valid: false, msg: `Did you mean ${user}@${known}?` };
-    }
-  }
-
-  return { valid: true, msg: "" };
-};
-
-const isValidName = v => v.trim().length >= 2;
 
 // ── Icons ──────────────────────────────────────────
 const I = {
@@ -129,10 +10,10 @@ const I = {
   clock:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   briefcase:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>,
   phone:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.36 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.27 1h3a2 2 0 0 1 2 1.72c.128.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.572 2.81.7A2 2 0 0 1 22 16.92z"/></svg>,
-  github:   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>,
-  linkedin: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>,
-  whatsapp: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>,
-  twitter:  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.631L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>,
+  github:    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>,
+  linkedin:  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>,
+  whatsapp:  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>,
+  twitter:   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.631L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>,
   send:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
   check:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
   arrow:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
@@ -145,6 +26,7 @@ const Icon = ({ name, size = 18 }) => (
   </span>
 );
 
+// ── Hooks ──────────────────────────────────────────
 function useWindowWidth() {
   const [w, setW] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
   useEffect(() => {
@@ -156,7 +38,7 @@ function useWindowWidth() {
 }
 
 function useInView(threshold = 0.1) {
-  const ref = useRef(null);
+  const ref  = useRef(null);
   const [vis, setVis] = useState(false);
   useEffect(() => {
     const el = ref.current; if (!el) return;
@@ -166,50 +48,31 @@ function useInView(threshold = 0.1) {
   return [ref, vis];
 }
 
+// ── Form input ─────────────────────────────────────
 function Input({ label, value, onChange, placeholder, type = "text", required, span }) {
-  const [foc, setFoc]     = useState(false);
+  const [foc, setFoc] = useState(false);
   const [dirty, setDirty] = useState(false);
-
-  let errMsg = "";
-  if (dirty && required && !value.trim()) {
-    errMsg = "This field is required.";
-  } else if (dirty && type === "email" && value.trim()) {
-    const check = isValidEmail(value);
-    if (!check.valid) errMsg = check.msg;
-  } else if (dirty && type === "text" && required && value.trim() && !isValidName(value)) {
-    errMsg = "Name must be at least 2 characters.";
-  }
-
-  const hasErr = !!errMsg;
-  const isGood = dirty && value.trim() && !hasErr;
-
+  const err = dirty && required && !value.trim();
   return (
     <div style={{ gridColumn: span ? "1 / -1" : undefined }}>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: foc ? ORANGE : hasErr ? "#ff4d4d" : "#4a4a4a", marginBottom: 9, transition: "color .2s" }}>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: foc ? ORANGE : err ? "#ff4d4d" : "#4a4a4a", marginBottom: 9, transition: "color .2s" }}>
         {label}{required && <span style={{ color: ORANGE, marginLeft: 2 }}>*</span>}
       </label>
-      <div style={{ position: "relative" }}>
-        <input
-          type={type} value={value} placeholder={placeholder} required={required}
-          onChange={e => onChange(e.target.value)}
-          onFocus={() => setFoc(true)}
-          onBlur={() => { setFoc(false); setDirty(true); }}
-          style={{
-            width: "100%", padding: "14px 40px 14px 16px", boxSizing: "border-box",
-            background: foc ? "#131313" : "#0f0f0f",
-            border: `1px solid ${hasErr ? "#ff4d4d55" : isGood ? "#00C86455" : foc ? ORANGE + "60" : "#232323"}`,
-            borderRadius: 12, color: "#fff", fontSize: 14,
-            outline: "none", transition: "all .2s", fontFamily: "inherit",
-            boxShadow: foc ? `0 0 0 3px ${ORANGE}12` : hasErr ? "0 0 0 3px #ff4d4d12" : isGood ? "0 0 0 3px #00C86412" : "none",
-          }}
-        />
-        {dirty && value.trim() && (
-          <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 14, pointerEvents: "none", color: hasErr ? "#ff4d4d" : "#00C864", fontWeight: 700 }}>
-            {hasErr ? "✕" : "✓"}
-          </span>
-        )}
-      </div>
-      {hasErr && <p style={{ fontSize: 11, color: "#ff4d4d", margin: "6px 0 0" }}>⚠ {errMsg}</p>}
+      <input
+        type={type} value={value} placeholder={placeholder} required={required}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setFoc(true)}
+        onBlur={() => { setFoc(false); setDirty(true); }}
+        style={{
+          width: "100%", padding: "14px 16px",
+          background: foc ? "#131313" : "#0f0f0f",
+          border: `1px solid ${err ? "#ff4d4d44" : foc ? ORANGE + "60" : "#232323"}`,
+          borderRadius: 12, color: "#fff", fontSize: 14,
+          outline: "none", transition: "all .2s", fontFamily: "inherit",
+          boxShadow: foc ? `0 0 0 3px ${ORANGE}12` : err ? "0 0 0 3px #ff4d4d10" : "none",
+        }}
+      />
+      {err && <p style={{ fontSize: 11, color: "#ff4d4d", marginTop: 5 }}>This field is required.</p>}
     </div>
   );
 }
@@ -239,24 +102,16 @@ function Select({ label, value, onChange, options, required, span }) {
 }
 
 function Textarea({ label, value, onChange, placeholder, required }) {
-  const [foc, setFoc]     = useState(false);
+  const [foc, setFoc] = useState(false);
   const [dirty, setDirty] = useState(false);
-
-  const tooShort = dirty && required && value.trim().length > 0 && value.trim().length < 10;
-  const empty    = dirty && required && !value.trim();
-  const hasErr   = tooShort || empty;
-  const isGood   = !hasErr && value.trim().length >= 10;
-  const errMsg   = empty ? "Message is required." : tooShort ? "Please write at least 10 characters." : "";
-
+  const err = dirty && required && !value.trim();
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 }}>
-        <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: foc ? ORANGE : hasErr ? "#ff4d4d" : "#4a4a4a", transition: "color .2s" }}>
+        <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: foc ? ORANGE : err ? "#ff4d4d" : "#4a4a4a", transition: "color .2s" }}>
           {label}{required && <span style={{ color: ORANGE, marginLeft: 2 }}>*</span>}
         </label>
-        <span style={{ fontSize: 10, color: value.length > 420 ? ORANGE : value.length >= 10 ? "#00C864" : "#333", transition: "color .2s" }}>
-          {value.length} / 500{value.length > 0 && value.length < 10 ? " (min 10)" : ""}
-        </span>
+        <span style={{ fontSize: 10, color: value.length > 420 ? ORANGE : "#333", transition: "color .2s" }}>{value.length} / 500</span>
       </div>
       <textarea
         rows={6} maxLength={500} value={value} placeholder={placeholder} required={required}
@@ -265,18 +120,18 @@ function Textarea({ label, value, onChange, placeholder, required }) {
         style={{
           width: "100%", padding: "14px 16px", fontFamily: "inherit",
           background: foc ? "#131313" : "#0f0f0f",
-          border: `1px solid ${hasErr ? "#ff4d4d55" : isGood ? "#00C86455" : foc ? ORANGE + "60" : "#232323"}`,
+          border: `1px solid ${err ? "#ff4d4d44" : foc ? ORANGE + "60" : "#232323"}`,
           borderRadius: 12, color: "#fff", fontSize: 14,
           outline: "none", transition: "all .2s", resize: "vertical",
           lineHeight: 1.8, minHeight: 150,
-          boxShadow: foc ? `0 0 0 3px ${ORANGE}12` : hasErr ? "0 0 0 3px #ff4d4d12" : isGood ? "0 0 0 3px #00C86412" : "none",
+          boxShadow: foc ? `0 0 0 3px ${ORANGE}12` : "none",
         }}
       />
-      {hasErr && <p style={{ fontSize: 11, color: "#ff4d4d", margin: "6px 0 0" }}>⚠ {errMsg}</p>}
     </div>
   );
 }
 
+// ── FAQ ────────────────────────────────────────────
 function FAQ({ q, a, index }) {
   const [open, setOpen] = useState(false);
   const [ref, vis] = useInView(0.1);
@@ -295,187 +150,261 @@ function FAQ({ q, a, index }) {
   );
 }
 
+// ── Data ───────────────────────────────────────────
 const PROJECT_TYPES = [
-  { v: "",             l: "Select project type…"         },
-  { v: "backend",      l: "Backend / API Development"     },
-  { v: "fullstack",    l: "Full-Stack Web Application"    },
-  { v: "mobile",       l: "Mobile App Development"        },
-  { v: "ai",           l: "AI / Machine Learning System"  },
-  { v: "cv",           l: "Computer Vision Project"       },
-  { v: "consultation", l: "Technical Consultation"        },
-  { v: "other",        l: "Other"                         },
+  { v: "",             l: "Select project type…"          },
+  { v: "backend",      l: "Backend / API Development"      },
+  { v: "fullstack",    l: "Full-Stack Web Application"     },
+  { v: "mobile",       l: "Mobile App Development"         },
+  { v: "ai",           l: "AI / Machine Learning System"   },
+  { v: "cv",           l: "Computer Vision Project"        },
+  { v: "consultation", l: "Technical Consultation"         },
+  { v: "other",        l: "Other"                          },
 ];
 
-const BUDGETS = [
-  { v: "",        l: "Select budget range…" },
-  { v: "sub1k",   l: "Under $1,000"         },
-  { v: "1k-5k",   l: "$1,000 – $5,000"      },
-  { v: "5k-10k",  l: "$5,000 – $10,000"     },
-  { v: "10k-25k", l: "$10,000 – $25,000"    },
-  { v: "25k+",    l: "$25,000+"             },
-  { v: "discuss", l: "Prefer to discuss"    },
+const CURRENCIES = [
+  { v: "NGN", l: "₦ NGN" },
+  { v: "USD", l: "$ USD" },
+  { v: "EUR", l: "€ EUR" },
+  { v: "GBP", l: "£ GBP" },
+  { v: "CAD", l: "$ CAD" },
+  { v: "AUD", l: "$ AUD" },
 ];
 
 const FAQS = [
-  { q: "What types of projects do you take on?",        a: "I work on backend systems, full-stack web apps, mobile applications, and AI/ML systems — including REST APIs, React frontends, React Native apps, and computer vision pipelines." },
-  { q: "What is your typical response time?",           a: "I respond to all enquiries within 24 hours on business days. For urgent matters, please mention it in your message and I will prioritise accordingly." },
-  { q: "Are you available for remote work?",            a: "Yes — fully set up for remote collaboration across time zones. Also open to on-site engagements in Ogun State, Nigeria." },
-  { q: "Do you work with international clients?",       a: "Absolutely. I work with clients globally and am comfortable with async communication, scheduled video calls, and cross-timezone project management." },
-  { q: "What does your development process look like?", a: "Requirements gathering → scope definition → iterative development with regular check-ins → QA & testing → deployment and handover. I use Git throughout and provide clear documentation." },
-  { q: "Do you offer post-launch support?",             a: "Yes — standard 30-day post-launch support for bug fixes is included. Ongoing maintenance and feature development can be arranged as a separate engagement." },
+  { q: "What types of projects do you take on?",         a: "I work on backend systems, full-stack web apps, mobile applications, and AI/ML systems — including REST APIs, React frontends, React Native apps, and computer vision pipelines." },
+  { q: "What is your typical response time?",            a: "I respond to all enquiries within 24 hours on business days. For urgent matters, please mention it in your message and I will prioritise accordingly." },
+  { q: "Are you available for remote work?",             a: "Yes — fully set up for remote collaboration across time zones. Also open to on-site engagements in Ogun State, Nigeria." },
+  { q: "Do you work with international clients?",        a: "Absolutely. I work with clients globally and am comfortable with async communication, scheduled video calls, and cross-timezone project management." },
+  { q: "What does your development process look like?",  a: "Requirements gathering → scope definition → iterative development with regular check-ins → QA & testing → deployment and handover. I use Git throughout and provide clear documentation." },
+  { q: "Do you offer post-launch support?",              a: "Yes — standard 30-day post-launch support for bug fixes is included. Ongoing maintenance and feature development can be arranged as a separate engagement." },
 ];
 
+
+// ── Smart Budget Field ─────────────────────────────
+// Two modes: "discuss" (prefer to discuss) OR custom amount + currency
+function BudgetField({ budgetType, budgetAmount, budgetCurrency, onTypeChange, onAmountChange, onCurrencyChange }) {
+  const [amtFoc, setAmtFoc] = useState(false);
+  const isDiscuss = budgetType === "discuss";
+
+  const fieldBase = {
+    background: "#0f0f0f", border: `1px solid #232323`,
+    borderRadius: 10, color: "#fff", fontSize: 14,
+    outline: "none", fontFamily: "inherit", transition: "all .2s",
+  };
+
+  return (
+    <div>
+      <label style={{ display:"block", fontSize:11, fontWeight:700,
+        letterSpacing:"0.12em", textTransform:"uppercase",
+        color:"#4a4a4a", marginBottom:9 }}>
+        Budget <span style={{ color:ORANGE, marginLeft:2 }}>*</span>
+      </label>
+
+      {/* Toggle row */}
+      <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+        {[
+          { v:"custom",  l:"Enter Amount" },
+          { v:"discuss", l:"Prefer to Discuss" },
+        ].map(opt => {
+          const active = budgetType === opt.v;
+          return (
+            <button key={opt.v} type="button"
+              onClick={() => onTypeChange(opt.v)}
+              style={{
+                flex:1, padding:"9px 12px",
+                borderRadius:9, cursor:"pointer", fontSize:12, fontWeight:700,
+                border: `1px solid ${active ? ORANGE+"60" : "#232323"}`,
+                background: active ? `${ORANGE}18` : "#0f0f0f",
+                color: active ? ORANGE : "#555",
+                transition:"all .22s",
+              }}>
+              {opt.l}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Custom amount row */}
+      {budgetType === "custom" && (
+        <div style={{ display:"flex", gap:8 }}>
+          {/* Currency selector */}
+          <select
+            value={budgetCurrency}
+            onChange={e => onCurrencyChange(e.target.value)}
+            style={{
+              ...fieldBase,
+              width:110, padding:"12px 10px",
+              cursor:"pointer", appearance:"none",
+              backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+              backgroundRepeat:"no-repeat", backgroundPosition:"right 8px center",
+              paddingRight:28, flexShrink:0,
+            }}>
+            {CURRENCIES.map(c => (
+              <option key={c.v} value={c.v} style={{ background:"#111" }}>{c.l}</option>
+            ))}
+          </select>
+
+          {/* Amount input */}
+          <input
+            type="number"
+            min="0"
+            placeholder="e.g. 5000"
+            value={budgetAmount}
+            onChange={e => onAmountChange(e.target.value)}
+            onFocus={() => setAmtFoc(true)}
+            onBlur={() => setAmtFoc(false)}
+            style={{
+              ...fieldBase,
+              flex:1, padding:"12px 14px",
+              border: `1px solid ${amtFoc ? ORANGE+"60" : "#232323"}`,
+              boxShadow: amtFoc ? `0 0 0 3px ${ORANGE}12` : "none",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Prefer to discuss confirmation */}
+      {budgetType === "discuss" && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px",
+          background:`${ORANGE}08`, border:`1px solid ${ORANGE}25`, borderRadius:10 }}>
+          <span style={{ fontSize:16 }}>💬</span>
+          <span style={{ fontSize:12, color:"#888", lineHeight:1.5 }}>
+            No problem — we'll discuss the budget during our discovery call.
+          </span>
+        </div>
+      )}
+
+      {/* Empty state hint */}
+      {!budgetType && (
+        <p style={{ fontSize:11, color:"#333", margin:0 }}>
+          Choose an option above to continue.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════
+// PAGE
+// ══════════════════════════════════════════════════
 export default function Contact() {
-  const w      = useWindowWidth();
-  const wide   = w >= 968;
+  const w = useWindowWidth();
+  const wide = w >= 968;
   const twoCol = w >= 560;
 
-  const [form,    setForm]    = useState({ name: "", email: "", company: "", type: "", budget: "", message: "" });
+  const [form,    setForm]    = useState({ name:"", email:"", company:"", type:"", budgetType:"", budgetAmount:"", budgetCurrency:"USD", message:"" });
   const [step,    setStep]    = useState(1);
   const [sent,    setSent]    = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
 
-  const f       = k => v => setForm(p => ({ ...p, [k]: v }));
-  const step1OK = isValidName(form.name) && isValidEmail(form.email).valid && form.type;
-  const step2OK = form.message.trim().length >= 10;
+  const f = k => v => setForm(p => ({ ...p, [k]: v }));
+  const step1OK = form.name.trim() && form.email.trim() && form.type && form.budgetType && (form.budgetType === 'discuss' || form.budgetAmount.trim());
+  const step2OK = form.message.trim();
 
-  const submit = async e => {
+  const submit = e => {
     e.preventDefault();
     if (!step2OK) return;
     setLoading(true);
-    setError("");
-
-    // Final server-side-style guard before sending
-    const emailCheck = isValidEmail(form.email);
-    if (!emailCheck.valid) {
-      setError(emailCheck.msg);
-      setLoading(false);
-      return;
-    }
-
-    const projectLabel = PROJECT_TYPES.find(o => o.v === form.type)?.l || form.type;
-    const budgetLabel  = BUDGETS.find(o => o.v === form.budget)?.l || "Not specified";
-    try {
-      // Email 1 — notify Adekoya
-      await emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        {
-          from_name:    form.name,
-          from_email:   form.email,
-          company:      form.company || "Not provided",
-          project_type: projectLabel,
-          budget:       budgetLabel,
-          message:      form.message,
-        },
-        EMAILJS_PUBLIC_KEY
-      );
-
-      // Email 2 — branded auto-reply to sender
-      await emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_AUTOREPLY_ID,
-        {
-          from_name:    form.name,
-          from_email:   form.email,
-          project_type: projectLabel,
-          budget:       budgetLabel,
-        },
-        EMAILJS_PUBLIC_KEY
-      );
-
-      setSent(true);
-    } catch (err) {
-      console.error("EmailJS error:", err);
-      setError("Something went wrong. Please try again or email me directly at obtech100@gmail.com");
-    } finally {
-      setLoading(false);
-    }
+    setTimeout(() => { setLoading(false); setSent(true); }, 1700);
   };
 
-  const reset = () => {
-    setSent(false); setStep(1);
-    setForm({ name: "", email: "", company: "", type: "", budget: "", message: "" });
-    setError("");
-  };
+  const reset = () => { setSent(false); setStep(1); setForm({ name:"",email:"",company:"",type:"",budgetType:"",budgetAmount:"",budgetCurrency:"USD",message:"" }); };
+
+  // Hero ref for gradient animation
+  const heroRef = useRef(null);
 
   return (
     <PageWrapper>
       <style>{`
-        @keyframes fadeUp { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes popIn  { 0%{transform:scale(.8);opacity:0} 70%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
-        @keyframes spin   { to{transform:rotate(360deg)} }
-        @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.4} }
-        @keyframes drift  { 0%,100%{transform:translate(0,0)} 33%{transform:translate(6px,-8px)} 66%{transform:translate(-5px,5px)} }
+        @keyframes fadeUp   { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes popIn    { 0%{transform:scale(.8);opacity:0} 70%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+        @keyframes spin     { to{transform:rotate(360deg)} }
+        @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes drift    { 0%,100%{transform:translate(0,0)} 33%{transform:translate(6px,-8px)} 66%{transform:translate(-5px,5px)} }
         ::placeholder { color: #383838; }
       `}</style>
 
-      {/* HERO */}
-      <div style={{ background: "#080808", position: "relative", overflow: "hidden", padding: "clamp(72px,10vw,120px) 0 clamp(52px,7vw,80px)" }}>
-        <div style={{ position: "absolute", top: "10%", right: "8%", width: "clamp(280px,38vw,480px)", height: "clamp(280px,38vw,480px)", background: `radial-gradient(circle,${ORANGE}0A,transparent 65%)`, borderRadius: "50%", animation: "drift 8s ease-in-out infinite", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", bottom: "5%", left: "5%", width: "clamp(200px,28vw,340px)", height: "clamp(200px,28vw,340px)", background: `radial-gradient(circle,${ORANGE}06,transparent 65%)`, borderRadius: "50%", animation: "drift 11s ease-in-out infinite reverse", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(${ORANGE}08 1px,transparent 1px),linear-gradient(90deg,${ORANGE}08 1px,transparent 1px)`, backgroundSize: "48px 48px", pointerEvents: "none" }} />
+      {/* ══ HERO ══════════════════════════════════ */}
+      <div ref={heroRef} style={{ background: "#080808", position: "relative", overflow: "hidden", padding: "clamp(72px,10vw,120px) 0 clamp(52px,7vw,80px)" }}>
 
-        <div className="container" style={{ position: "relative", zIndex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 28, animation: "fadeUp .5s ease forwards" }}>
-            <Link to="/" style={{ fontSize: 12, color: "#3a3a3a", textDecoration: "none" }} onMouseEnter={e => e.currentTarget.style.color="#888"} onMouseLeave={e => e.currentTarget.style.color="#3a3a3a"}>Home</Link>
-            <span style={{ fontSize: 12, color: "#222" }}>/</span>
-            <span style={{ fontSize: 12, color: ORANGE, fontWeight: 600 }}>Contact</span>
+        {/* Animated gradient orbs */}
+        <div style={{ position:"absolute", top:"10%", right:"8%", width:"clamp(280px,38vw,480px)", height:"clamp(280px,38vw,480px)", background:`radial-gradient(circle,${ORANGE}0A,transparent 65%)`, borderRadius:"50%", animation:"drift 8s ease-in-out infinite", pointerEvents:"none" }} />
+        <div style={{ position:"absolute", bottom:"5%", left:"5%", width:"clamp(200px,28vw,340px)", height:"clamp(200px,28vw,340px)", background:`radial-gradient(circle,${ORANGE}06,transparent 65%)`, borderRadius:"50%", animation:"drift 11s ease-in-out infinite reverse", pointerEvents:"none" }} />
+
+        {/* Fine grid */}
+        <div style={{ position:"absolute", inset:0, backgroundImage:`linear-gradient(${ORANGE}08 1px,transparent 1px),linear-gradient(90deg,${ORANGE}08 1px,transparent 1px)`, backgroundSize:"48px 48px", pointerEvents:"none" }} />
+
+        <div className="container" style={{ position:"relative", zIndex:1 }}>
+
+          {/* Breadcrumb */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:28, animation:"fadeUp .5s ease forwards" }}>
+            <Link to="/" style={{ fontSize:12, color:"#3a3a3a", textDecoration:"none", transition:"color .2s" }} onMouseEnter={e=>e.currentTarget.style.color="#888"} onMouseLeave={e=>e.currentTarget.style.color="#3a3a3a"}>Home</Link>
+            <span style={{ fontSize:12, color:"#222" }}>/</span>
+            <span style={{ fontSize:12, color:ORANGE, fontWeight:600 }}>Contact</span>
           </div>
 
-          <div style={{ display: "flex", alignItems: wide ? "center" : "flex-start", gap: "clamp(40px,6vw,80px)", flexDirection: wide ? "row" : "column", flexWrap: "wrap" }}>
+          <div style={{ display:"flex", alignItems: wide?"center":"flex-start", gap:"clamp(40px,6vw,80px)", flexDirection: wide?"row":"column", flexWrap:"wrap" }}>
 
-            <div style={{ flex: "1 1 300px", minWidth: 0, animation: "fadeUp .7s ease .06s both" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 11, fontWeight: 700, letterSpacing: "0.18em", color: ORANGE, textTransform: "uppercase", padding: "5px 14px", border: `1px solid ${ORANGE}35`, borderRadius: 99, background: `${ORANGE}0E` }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: ORANGE, animation: "pulse 2s ease infinite" }} />
+            {/* Left — heading */}
+            <div style={{ flex:"1 1 300px", minWidth:0, animation:"fadeUp .7s ease .06s both" }}>
+
+              {/* Label pill */}
+              <div style={{ display:"inline-flex", alignItems:"center", gap:8, marginBottom:20, fontSize:11, fontWeight:700, letterSpacing:"0.18em", color:ORANGE, textTransform:"uppercase", padding:"5px 14px", border:`1px solid ${ORANGE}35`, borderRadius:99, background:`${ORANGE}0E` }}>
+                <span style={{ width:6, height:6, borderRadius:"50%", background:ORANGE, animation:"pulse 2s ease infinite" }} />
                 Get In Touch
               </div>
-              <h1 style={{ fontSize: "clamp(32px,5.5vw,60px)", fontWeight: 900, fontFamily: "'Space Grotesk',sans-serif", lineHeight: 1.06, margin: "0 0 20px", letterSpacing: "-0.04em", color: "#fff" }}>
-                Let's Build<br /><span style={{ color: ORANGE }}>Something</span><br />Great Together.
+
+              <h1 style={{ fontSize:"clamp(32px,5.5vw,60px)", fontWeight:900, fontFamily:"'Space Grotesk',sans-serif", lineHeight:1.06, margin:"0 0 20px", letterSpacing:"-0.04em", color:"#fff" }}>
+                Let's Build<br/>
+                <span style={{ color:ORANGE }}>Something</span><br/>
+                Great Together.
               </h1>
-              <p style={{ fontSize: "clamp(14px,1.8vw,17px)", color: "#5a5a5a", lineHeight: 1.85, maxWidth: 460, margin: "0 0 36px" }}>
+
+              <p style={{ fontSize:"clamp(14px,1.8vw,17px)", color:"#5a5a5a", lineHeight:1.85, maxWidth:460, margin:"0 0 36px" }}>
                 Have a project in mind? Need a backend system, AI pipeline, or full-stack application? Reach out — I respond within 24 hours.
               </p>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Contact rows */}
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
                 {[
-                  { icon: "mail",      label: "Email",     val: "obtech100@gmail.com",     href: "mailto:obtech100@gmail.com" },
-                  { icon: "phone",     label: "Phone",     val: "+234 811 967 3231",        href: "tel:+2348119673231" },
-                  { icon: "pin",       label: "Location",  val: "Ogun State, Nigeria",      href: null },
-                  { icon: "clock",     label: "Response",  val: "Within 24 hours",          href: null },
-                  { icon: "briefcase", label: "Available", val: "Open for new engagements", href: null },
+                  { icon:"mail",      label:"Email",     val:"obtech100@gmail.com",        href:"mailto:obtech100@gmail.com" },
+                  { icon:"phone",     label:"Phone",     val:"+234 811 967 3231",             href:"tel:+2348119673231" },
+                  { icon:"pin",       label:"Location",  val:"Ogun State, Nigeria",                href:null },
+                  { icon:"clock",     label:"Response",  val:"Within 24 hours",              href:null },
+                  { icon:"briefcase", label:"Available", val:"Open for new engagements",     href:null },
                 ].map(({ icon, label, val, href }) => {
                   const [hov, setHov] = useState(false);
                   const Tag = href ? "a" : "div";
                   return (
-                    <Tag key={label} href={href} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", background: hov ? `${ORANGE}0A` : "#0e0e0e", border: `1px solid ${hov ? ORANGE+"40" : "#1e1e1e"}`, borderRadius: 13, textDecoration: "none", transition: "all .22s", transform: hov ? "translateX(5px)" : "translateX(0)" }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: hov ? `${ORANGE}18` : `${ORANGE}0E`, border: `1px solid ${hov ? ORANGE+"50" : ORANGE+"20"}`, display: "flex", alignItems: "center", justifyContent: "center", color: ORANGE }}>
+                    <Tag key={label} href={href} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+                      style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 16px", background: hov?`${ORANGE}0A`:"#0e0e0e", border:`1px solid ${hov?ORANGE+"40":"#1e1e1e"}`, borderRadius:13, textDecoration:"none", transition:"all .22s", transform: hov?"translateX(5px)":"translateX(0)", boxShadow: hov?`0 6px 20px ${ORANGE}10`:"none" }}>
+                      <div style={{ width:40, height:40, borderRadius:10, flexShrink:0, background: hov?`${ORANGE}18`:`${ORANGE}0E`, border:`1px solid ${hov?ORANGE+"50":ORANGE+"20"}`, display:"flex", alignItems:"center", justifyContent:"center", color:ORANGE, transition:"all .22s" }}>
                         <Icon name={icon} size={17} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a3a", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
-                        <div style={{ fontSize: "clamp(12px,1.5vw,13px)", color: hov ? "#fff" : "#aaa", fontWeight: 600, transition: "color .22s" }}>{val}</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#3a3a3a", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>{label}</div>
+                        <div style={{ fontSize:"clamp(12px,1.5vw,13px)", color: hov?"#fff":"#aaa", fontWeight:600, transition:"color .22s" }}>{val}</div>
                       </div>
                     </Tag>
                   );
                 })}
               </div>
 
-              <div style={{ display: "flex", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
+              {/* Social links */}
+              <div style={{ display:"flex", gap:10, marginTop:24, flexWrap:"wrap" }}>
                 {[
-                  { icon: "github",   label: "GitHub",   href: "https://github.com/OBTECH100",                                    c: "#ccc"    },
-                  { icon: "linkedin", label: "LinkedIn", href: "https://www.linkedin.com/in/oluwasegun-boluwatife-9103a9289",     c: "#0A66C2" },
-                  { icon: "whatsapp", label: "WhatsApp", href: "https://wa.me/2348119673231",                                     c: "#25D366" },
-                  { icon: "twitter",  label: "X",        href: "https://x.com/OBTECH100",                                        c: "#fff"    },
-                  { icon: "mail",     label: "Email",    href: "mailto:obtech100@gmail.com",                                      c: ORANGE    },
+                  { icon:"github",   label:"GitHub",    href:"https://github.com/OBTECH100",                                    c:"#ccc"    },
+                  { icon:"linkedin", label:"LinkedIn",  href:"https://www.linkedin.com/in/oluwasegun-boluwatife-9103a9289",    c:"#0A66C2" },
+                  { icon:"whatsapp", label:"WhatsApp",  href:"https://wa.me/2348119673231",                                 c:"#25D366" },
+                  { icon:"twitter",  label:"X",         href:"https://x.com/@adekoyasegun200",                                         c:"#fff"    },
+                  { icon:"mail",     label:"Email",     href:"mailto:obtech100@gmail.com",                              c:ORANGE    },
                 ].map(({ icon, label, href, c }) => {
                   const [hov, setHov] = useState(false);
                   return (
-                    <a key={label} href={href} target="_blank" rel="noopener noreferrer" onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", background: hov ? `${c}12` : "#0e0e0e", border: `1px solid ${hov ? c+"50" : "#1e1e1e"}`, borderRadius: 10, color: hov ? c : "#555", textDecoration: "none", fontSize: 13, fontWeight: 600, transition: "all .22s", transform: hov ? "translateY(-2px)" : "translateY(0)" }}>
-                      <span style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{I[icon]}</span>
+                    <a key={label} href={href} target="_blank" rel="noopener noreferrer" onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+                      style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 16px", background: hov?`${c}12`:"#0e0e0e", border:`1px solid ${hov?c+"50":"#1e1e1e"}`, borderRadius:10, color: hov?c:"#555", textDecoration:"none", fontSize:13, fontWeight:600, transition:"all .22s", transform: hov?"translateY(-2px)":"translateY(0)", boxShadow: hov?`0 5px 16px ${c}18`:"none" }}>
+                      <span style={{ width:16, height:16, display:"flex", alignItems:"center", justifyContent:"center" }}>{I[icon]}</span>
                       {label}
                     </a>
                   );
@@ -483,23 +412,37 @@ export default function Contact() {
               </div>
             </div>
 
+            {/* Right — availability card */}
             {wide && (
-              <div style={{ flex: "0 0 auto", animation: "fadeUp .7s ease .15s both" }}>
-                <div style={{ background: "#0e0e0e", border: "1px solid #1e1e1e", borderRadius: 20, padding: "28px 28px 24px", width: 240, position: "relative", overflow: "hidden" }}>
-                  <div style={{ position: "absolute", top: -30, right: -30, width: 120, height: 120, background: `radial-gradient(circle,${ORANGE}10,transparent 70%)`, pointerEvents: "none" }} />
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "8px 14px", background: "rgba(0,200,100,.07)", border: "1px solid rgba(0,200,100,.18)", borderRadius: 99 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#00C864", boxShadow: "0 0 10px #00C864", flexShrink: 0, animation: "pulse 2s ease infinite" }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#00C864" }}>Available Now</span>
+              <div style={{ flex:"0 0 auto", animation:"fadeUp .7s ease .15s both" }}>
+                <div style={{ background:"#0e0e0e", border:"1px solid #1e1e1e", borderRadius:20, padding:"28px 28px 24px", width:240, position:"relative", overflow:"hidden" }}>
+                  <div style={{ position:"absolute", top:-30, right:-30, width:120, height:120, background:`radial-gradient(circle,${ORANGE}10,transparent 70%)`, pointerEvents:"none" }} />
+                  {/* Status */}
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20, padding:"8px 14px", background:"rgba(0,200,100,.07)", border:"1px solid rgba(0,200,100,.18)", borderRadius:99 }}>
+                    <span style={{ width:8, height:8, borderRadius:"50%", background:"#00C864", boxShadow:"0 0 10px #00C864", flexShrink:0, animation:"pulse 2s ease infinite" }} />
+                    <span style={{ fontSize:12, fontWeight:700, color:"#00C864" }}>Available Now</span>
                   </div>
-                  <div style={{ width: 64, height: 64, borderRadius: "50%", background: `linear-gradient(135deg,${ORANGE}30,#1a1a1a)`, border: `2px solid ${ORANGE}`, overflow: "hidden", marginBottom: 16, boxShadow: `0 0 24px ${ORANGE}30` }}>
-                    <img src="/profile.jpg" alt="Adekoya Oluwasegun" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }} />
+                  {/* Avatar */}
+                  <div style={{ width:64, height:64, borderRadius:"50%", background:`linear-gradient(135deg,${ORANGE}30,#1a1a1a)`, border:`2px solid ${ORANGE}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, marginBottom:16, boxShadow:`0 0 24px ${ORANGE}30` }}>
+                   <img
+                      src="/profile.jpg"
+                      alt="Adekoya Oluwasegun"
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        borderRadius:"50%",
+                        objectFit: "cover",
+                        objectPosition: "center top",
+                      }}
+                    />  
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", fontFamily: "'Space Grotesk',sans-serif", marginBottom: 4 }}>Adekoya Oluwasegun</div>
-                  <div style={{ fontSize: 11, color: ORANGE, fontWeight: 600, marginBottom: 16 }}>Software Dev & AI Engineer</div>
+                  <div style={{ fontSize:15, fontWeight:800, color:"#fff", fontFamily:"'Space Grotesk',sans-serif", marginBottom:4 }}>Adekoya Oluwasegun</div>
+                  <div style={{ fontSize:11, color:ORANGE, fontWeight:600, marginBottom:16 }}>Software Dev & AI Engineer</div>
+                  {/* Quick stats */}
                   {[["4+", "Years Exp."], ["6+", "Projects"], ["24h", "Response"]].map(([n, l]) => (
-                    <div key={l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #161616" }}>
-                      <span style={{ fontSize: 11, color: "#555" }}>{l}</span>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: ORANGE, fontFamily: "'Space Grotesk',sans-serif" }}>{n}</span>
+                    <div key={l} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 0", borderBottom:"1px solid #161616" }}>
+                      <span style={{ fontSize:11, color:"#555" }}>{l}</span>
+                      <span style={{ fontSize:13, fontWeight:800, color:ORANGE, fontFamily:"'Space Grotesk',sans-serif" }}>{n}</span>
                     </div>
                   ))}
                 </div>
@@ -509,119 +452,139 @@ export default function Contact() {
         </div>
       </div>
 
-      {/* FORM + PROCESS */}
-      <div className="section-pad" style={{ background: "#080808" }}>
+      {/* ══ FORM + PROCESS ════════════════════════ */}
+      <div className="section-pad" style={{ background:"#080808" }}>
         <div className="container">
-          <div style={{ display: "grid", gridTemplateColumns: wide ? "1fr 380px" : "1fr", gap: "clamp(32px,5vw,64px)", alignItems: "start" }}>
+          <div style={{ display:"grid", gridTemplateColumns: wide?"1fr 380px":"1fr", gap:"clamp(32px,5vw,64px)", alignItems:"start" }}>
 
-            <div style={{ background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 22, overflow: "hidden" }}>
-              <div style={{ padding: "clamp(20px,3vw,28px) clamp(22px,3.5vw,32px)", borderBottom: "1px solid #141414", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            {/* ── FORM ── */}
+            <div style={{ background:"#0d0d0d", border:"1px solid #1a1a1a", borderRadius:22, overflow:"hidden" }}>
+
+              {/* Form header */}
+              <div style={{ padding:"clamp(20px,3vw,28px) clamp(22px,3.5vw,32px)", borderBottom:"1px solid #141414", background:"#0a0a0a", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
                 <div>
-                  <h2 style={{ fontSize: "clamp(16px,2vw,20px)", fontWeight: 800, color: "#fff", margin: "0 0 3px", fontFamily: "'Space Grotesk',sans-serif" }}>
-                    {sent ? "Message Received ✓" : step === 1 ? "Project Details" : "Describe Your Project"}
+                  <h2 style={{ fontSize:"clamp(16px,2vw,20px)", fontWeight:800, color:"#fff", margin:"0 0 3px", fontFamily:"'Space Grotesk',sans-serif" }}>
+                    {sent ? "Message Received ✓" : step===1 ? "Project Details" : "Describe Your Project"}
                   </h2>
-                  <p style={{ fontSize: 11, color: "#333", margin: 0 }}>
-                    {sent ? "I'll be in touch shortly." : step === 1 ? "Tell me about your project" : "The more detail, the better"}
+                  <p style={{ fontSize:11, color:"#333", margin:0 }}>
+                    {sent ? "I'll be in touch shortly." : step===1 ? "Tell me about your project" : "The more detail, the better"}
                   </p>
                 </div>
+
+                {/* Step indicator */}
                 {!sent && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {[1, 2].map((n, i) => (
-                      <div key={n} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {i > 0 && <div style={{ width: 24, height: 1, background: step > 1 ? `${ORANGE}60` : "#252525", transition: "background .3s" }} />}
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: step > n ? `${ORANGE}1A` : step === n ? ORANGE : "#111", border: `1px solid ${step >= n ? ORANGE : "#2a2a2a"}`, color: step === n ? "#000" : step > n ? ORANGE : "#444", fontSize: 11, fontWeight: 800, transition: "all .3s" }}>
-                          {step > n ? <Icon name="check" size={12} /> : n}
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    {[1,2].map((n,i) => (
+                      <div key={n} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        {i > 0 && <div style={{ width:24, height:1, background: step>1?`${ORANGE}60`:"#252525", transition:"background .3s" }} />}
+                        <div style={{ width:28, height:28, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", transition:"all .3s", background: step>n?`${ORANGE}1A`:step===n?ORANGE:"#111", border:`1px solid ${step>=n?ORANGE:"#2a2a2a"}`, color: step===n?"#000":step>n?ORANGE:"#444", fontSize:11, fontWeight:800 }}>
+                          {step>n ? <Icon name="check" size={12}/> : n}
                         </div>
                       </div>
                     ))}
-                    <span style={{ fontSize: 10, color: "#333", marginLeft: 6 }}>Step {step} / 2</span>
+                    <span style={{ fontSize:10, color:"#333", marginLeft:6 }}>Step {step} / 2</span>
                   </div>
                 )}
               </div>
 
-              <div style={{ padding: "clamp(22px,3.5vw,32px)" }}>
+              {/* Form body */}
+              <div style={{ padding:"clamp(22px,3.5vw,32px)" }}>
+
+                {/* ── SUCCESS ── */}
                 {sent ? (
-                  <div style={{ textAlign: "center", padding: "clamp(28px,5vw,52px) 0", animation: "popIn .5s ease forwards" }}>
-                    <div style={{ width: 76, height: 76, borderRadius: "50%", background: `${ORANGE}14`, border: `2px solid ${ORANGE}50`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 22px", color: ORANGE }}>
+                  <div style={{ textAlign:"center", padding:"clamp(28px,5vw,52px) 0", animation:"popIn .5s ease forwards" }}>
+                    <div style={{ width:76, height:76, borderRadius:"50%", background:`${ORANGE}14`, border:`2px solid ${ORANGE}50`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 22px", boxShadow:`0 0 36px ${ORANGE}25`, color:ORANGE }}>
                       <Icon name="check" size={30} />
                     </div>
-                    <h3 style={{ fontSize: "clamp(18px,2.5vw,22px)", fontWeight: 900, color: "#fff", margin: "0 0 10px", fontFamily: "'Space Grotesk',sans-serif" }}>Message Sent!</h3>
-                    <p style={{ fontSize: "clamp(13px,1.5vw,14px)", color: "#555", lineHeight: 1.8, maxWidth: 320, margin: "0 auto 28px" }}>
-                      Thanks, <strong style={{ color: "#bbb" }}>{form.name.split(" ")[0]}</strong>. I've received your message and will respond within 24 hours.
+                    <h3 style={{ fontSize:"clamp(18px,2.5vw,22px)", fontWeight:900, color:"#fff", margin:"0 0 10px", fontFamily:"'Space Grotesk',sans-serif" }}>Message Sent!</h3>
+                    <p style={{ fontSize:"clamp(13px,1.5vw,14px)", color:"#555", lineHeight:1.8, maxWidth:320, margin:"0 auto 28px" }}>
+                      Thanks, <strong style={{ color:"#bbb" }}>{form.name.split(" ")[0]}</strong>. I've received your message and will respond within 24 hours.
                     </p>
-                    <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                      <button onClick={reset} style={{ padding: "10px 20px", background: `${ORANGE}14`, border: `1px solid ${ORANGE}40`, borderRadius: 10, fontSize: 13, fontWeight: 700, color: ORANGE, cursor: "pointer" }}>Send Another</button>
-                      <Link to="/projects" style={{ padding: "10px 20px", background: "#111", border: "1px solid #242424", borderRadius: 10, fontSize: 13, fontWeight: 700, color: "#aaa", textDecoration: "none" }}>View Projects</Link>
+                    <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
+                      <button onClick={reset} style={{ padding:"10px 20px", background:`${ORANGE}14`, border:`1px solid ${ORANGE}40`, borderRadius:10, fontSize:13, fontWeight:700, color:ORANGE, cursor:"pointer", transition:"background .2s" }} onMouseEnter={e=>e.currentTarget.style.background=`${ORANGE}22`} onMouseLeave={e=>e.currentTarget.style.background=`${ORANGE}14`}>
+                        Send Another
+                      </button>
+                      <Link to="/projects" style={{ padding:"10px 20px", background:"#111", border:"1px solid #242424", borderRadius:10, fontSize:13, fontWeight:700, color:"#aaa", textDecoration:"none" }}>
+                        View Projects
+                      </Link>
                     </div>
                   </div>
                 ) : (
                   <form onSubmit={submit}>
-                    {step === 1 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: twoCol ? "1fr 1fr" : "1fr", gap: 16 }}>
-                          <Input label="Full Name"     value={form.name}  onChange={f("name")}  placeholder="Adekoya Boluwatife" required />
-                          <Input label="Email Address" value={form.email} onChange={f("email")} placeholder="you@example.com"    type="email" required />
+
+                    {/* ── STEP 1 ── */}
+                    {step===1 && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+                        <div style={{ display:"grid", gridTemplateColumns: twoCol?"1fr 1fr":"1fr", gap:16 }}>
+                          <Input label="Full Name"     value={form.name}    onChange={f("name")}    placeholder="Adekoya Boluwatife"   required />
+                          <Input label="Email Address" value={form.email}   onChange={f("email")}   placeholder="you@example.com"      type="email" required />
                         </div>
-                        <Input label="Company / Organisation" value={form.company} onChange={f("company")} placeholder="Optional — your company name" span />
-                        <div style={{ display: "grid", gridTemplateColumns: twoCol ? "1fr 1fr" : "1fr", gap: 16 }}>
+                        <Input  label="Company / Organisation" value={form.company} onChange={f("company")} placeholder="Optional — your company name" span />
+                        <div style={{ display:"grid", gridTemplateColumns: twoCol?"1fr 1fr":"1fr", gap:16 }}>
                           <Select label="Project Type" value={form.type}   onChange={f("type")}   options={PROJECT_TYPES} required />
-                          <Select label="Budget Range" value={form.budget} onChange={f("budget")} options={BUDGETS} />
+                          <BudgetField
+                            budgetType={form.budgetType}
+                            budgetAmount={form.budgetAmount}
+                            budgetCurrency={form.budgetCurrency}
+                            onTypeChange={f("budgetType")}
+                            onAmountChange={f("budgetAmount")}
+                            onCurrencyChange={f("budgetCurrency")}
+                          />
                         </div>
-                        <div style={{ height: 1, background: "#161616" }} />
+
+                        <div style={{ height:1, background:"#161616" }} />
+
                         <button type="button" disabled={!step1OK} onClick={() => step1OK && setStep(2)}
-                          style={{ padding: "clamp(12px,2vw,15px)", background: step1OK ? ORANGE : "#161616", border: "none", borderRadius: 13, fontSize: "clamp(13px,1.6vw,14px)", fontWeight: 800, color: step1OK ? "#000" : "#333", cursor: step1OK ? "pointer" : "not-allowed", boxShadow: step1OK ? `0 0 24px ${ORANGE}30` : "none", transition: "all .25s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                          onMouseEnter={e => { if (step1OK) { e.currentTarget.style.transform = "translateY(-2px)"; } }}
-                          onMouseLeave={e => { e.currentTarget.style.transform = ""; }}
+                          style={{ padding:"clamp(12px,2vw,15px)", background: step1OK?ORANGE:"#161616", border:"none", borderRadius:13, fontSize:"clamp(13px,1.6vw,14px)", fontWeight:800, color: step1OK?"#000":"#333", cursor: step1OK?"pointer":"not-allowed", boxShadow: step1OK?`0 0 24px ${ORANGE}30`:"none", transition:"all .25s", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}
+                          onMouseEnter={e=>{ if(step1OK){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 26px ${ORANGE}45`;}}}
+                          onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=step1OK?`0 0 24px ${ORANGE}30`:"none";}}
                         >
-                          Continue <Icon name="arrow" size={15} />
+                          Continue <Icon name="arrow" size={15}/>
                         </button>
-                        <p style={{ fontSize: 11, color: "#272727", textAlign: "center", margin: 0 }}>Fields marked <span style={{ color: ORANGE }}>*</span> are required to proceed.</p>
+                        <p style={{ fontSize:11, color:"#272727", textAlign:"center", margin:0 }}>Fields marked <span style={{ color:ORANGE }}>*</span> are required to proceed.</p>
                       </div>
                     )}
 
-                    {step === 2 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 16px", background: "#111", border: "1px solid #1e1e1e", borderRadius: 12, flexWrap: "wrap" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 34, height: 34, borderRadius: "50%", background: `${ORANGE}18`, border: `1px solid ${ORANGE}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: ORANGE, flexShrink: 0 }}>
-                              {form.name.slice(0, 1).toUpperCase()}
+                    {/* ── STEP 2 ── */}
+                    {step===2 && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:18 }}>
+                        {/* Summary */}
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"12px 16px", background:"#111", border:"1px solid #1e1e1e", borderRadius:12, flexWrap:"wrap" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                            <div style={{ width:34, height:34, borderRadius:"50%", background:`${ORANGE}18`, border:`1px solid ${ORANGE}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:ORANGE, flexShrink:0 }}>
+                              {form.name.slice(0,1).toUpperCase()}
                             </div>
                             <div>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: "#ddd" }}>{form.name}</div>
-                              <div style={{ fontSize: 10, color: "#444" }}>{form.email} · {PROJECT_TYPES.find(o => o.v === form.type)?.l}</div>
+                              <div style={{ fontSize:12, fontWeight:700, color:"#ddd" }}>{form.name}</div>
+                              <div style={{ fontSize:10, color:"#444" }}>{form.email} · {PROJECT_TYPES.find(o=>o.v===form.type)?.l}</div>
                             </div>
                           </div>
-                          <button type="button" onClick={() => setStep(1)} style={{ fontSize: 11, fontWeight: 700, color: ORANGE, background: `${ORANGE}0E`, border: `1px solid ${ORANGE}30`, borderRadius: 7, padding: "4px 10px", cursor: "pointer" }}>Edit</button>
+                          <button type="button" onClick={()=>setStep(1)} style={{ fontSize:11, fontWeight:700, color:ORANGE, background:`${ORANGE}0E`, border:`1px solid ${ORANGE}30`, borderRadius:7, padding:"4px 10px", cursor:"pointer" }}>Edit</button>
                         </div>
 
                         <Textarea label="Your Message" value={form.message} onChange={f("message")} placeholder="Describe your project, goals, timeline, and any specific requirements…" required />
 
-                        <div style={{ height: 1, background: "#161616" }} />
+                        <div style={{ height:1, background:"#161616" }} />
 
-                        {error && (
-                          <div style={{ padding: "12px 16px", background: "#ff4d4d10", border: "1px solid #ff4d4d40", borderRadius: 11, fontSize: 13, color: "#ff6b6b", lineHeight: 1.6 }}>
-                            ⚠️ {error}
-                          </div>
-                        )}
-
-                        <div style={{ display: "flex", gap: 10 }}>
-                          <button type="button" onClick={() => setStep(1)}
-                            style={{ padding: "clamp(12px,2vw,14px) 18px", background: "transparent", border: "1px solid #222", borderRadius: 13, fontSize: 13, fontWeight: 700, color: "#555", cursor: "pointer", transition: "all .2s" }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = "#3a3a3a"; e.currentTarget.style.color = "#aaa"; }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = "#222"; e.currentTarget.style.color = "#555"; }}
+                        <div style={{ display:"flex", gap:10 }}>
+                          <button type="button" onClick={()=>setStep(1)}
+                            style={{ padding:"clamp(12px,2vw,14px) 18px", background:"transparent", border:"1px solid #222", borderRadius:13, fontSize:13, fontWeight:700, color:"#555", cursor:"pointer", transition:"all .2s" }}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor="#3a3a3a";e.currentTarget.style.color="#aaa";}}
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#555";}}
                           >← Back</button>
+
                           <button type="submit" disabled={loading || !step2OK}
-                            style={{ flex: 1, padding: "clamp(12px,2vw,14px) 20px", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, background: loading ? "#141414" : ORANGE, border: "none", borderRadius: 13, fontSize: "clamp(13px,1.6vw,14px)", fontWeight: 800, color: loading ? "#444" : "#000", cursor: loading || !step2OK ? "not-allowed" : "pointer", transition: "all .25s", opacity: !step2OK ? .45 : 1 }}
-                            onMouseEnter={e => { if (!loading && step2OK) e.currentTarget.style.transform = "translateY(-2px)"; }}
-                            onMouseLeave={e => { e.currentTarget.style.transform = ""; }}
+                            style={{ flex:1, padding:"clamp(12px,2vw,14px) 20px", display:"flex", alignItems:"center", justifyContent:"center", gap:9, background: loading?"#141414":ORANGE, border:"none", borderRadius:13, fontSize:"clamp(13px,1.6vw,14px)", fontWeight:800, color: loading?"#444":"#000", cursor: loading||!step2OK?"not-allowed":"pointer", boxShadow: loading?"none":`0 0 22px ${ORANGE}30`, transition:"all .25s", opacity: !step2OK?.45:1 }}
+                            onMouseEnter={e=>{if(!loading&&step2OK){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 26px ${ORANGE}45`;}}}
+                            onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=loading?"none":`0 0 22px ${ORANGE}30`;}}
                           >
                             {loading
-                              ? <><div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid #333", borderTopColor: ORANGE, animation: "spin .7s linear infinite" }} /> Sending…</>
-                              : <><Icon name="send" size={15} /> Send Message</>
+                              ? <><div style={{ width:16, height:16, borderRadius:"50%", border:`2px solid #333`, borderTopColor:ORANGE, animation:"spin .7s linear infinite" }}/> Sending…</>
+                              : <><Icon name="send" size={15}/> Send Message</>
                             }
                           </button>
                         </div>
-                        <p style={{ fontSize: 11, color: "#252525", textAlign: "center", margin: 0 }}>By submitting, your details may be used to respond to your enquiry.</p>
+                        <p style={{ fontSize:11, color:"#252525", textAlign:"center", margin:0, lineHeight:1.6 }}>By submitting, your details may be used to respond to your enquiry.</p>
                       </div>
                     )}
                   </form>
@@ -629,47 +592,52 @@ export default function Contact() {
               </div>
             </div>
 
-            {/* Right column */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{ background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 18, padding: "clamp(20px,3vw,28px)", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: -20, right: -20, width: 100, height: 100, background: `radial-gradient(circle,${ORANGE}0E,transparent 70%)`, pointerEvents: "none" }} />
-                <h3 style={{ fontSize: "clamp(14px,1.8vw,16px)", fontWeight: 800, color: "#fff", margin: "0 0 20px", fontFamily: "'Space Grotesk',sans-serif" }}>What Happens Next</h3>
+            {/* ── RIGHT: Process + social ── */}
+            <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+
+              {/* What happens next */}
+              <div style={{ background:"#0d0d0d", border:"1px solid #1a1a1a", borderRadius:18, padding:"clamp(20px,3vw,28px)", position:"relative", overflow:"hidden" }}>
+                <div style={{ position:"absolute", top:-20, right:-20, width:100, height:100, background:`radial-gradient(circle,${ORANGE}0E,transparent 70%)`, pointerEvents:"none" }} />
+                <h3 style={{ fontSize:"clamp(14px,1.8vw,16px)", fontWeight:800, color:"#fff", margin:"0 0 20px", fontFamily:"'Space Grotesk',sans-serif" }}>
+                  What Happens Next
+                </h3>
                 {[
-                  { n: "01", t: "I read your message", d: "Every enquiry reviewed personally — no auto-replies." },
-                  { n: "02", t: "Response within 24h", d: "A detailed reply within one business day." },
-                  { n: "03", t: "Discovery call",      d: "A short call to align on scope and goals." },
-                  { n: "04", t: "Proposal & kickoff",  d: "Clear deliverables agreed before any work begins." },
+                  { n:"01", t:"I read your message",    d:"Every enquiry reviewed personally — no auto-replies." },
+                  { n:"02", t:"Response within 24h",    d:"A detailed reply within one business day." },
+                  { n:"03", t:"Discovery call",         d:"A short call to align on scope and goals." },
+                  { n:"04", t:"Proposal & kickoff",     d:"Clear deliverables agreed before any work begins." },
                 ].map(({ n, t, d }, i) => (
-                  <div key={n} style={{ display: "flex", gap: 14, marginBottom: i < 3 ? 18 : 0, alignItems: "flex-start" }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: `${ORANGE}12`, border: `1px solid ${ORANGE}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: ORANGE }}>{n}</div>
+                  <div key={n} style={{ display:"flex", gap:14, marginBottom: i<3?18:0, alignItems:"flex-start" }}>
+                    <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0, background:`${ORANGE}12`, border:`1px solid ${ORANGE}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color:ORANGE }}>{n}</div>
                     <div>
-                      <div style={{ fontSize: "clamp(12px,1.5vw,13px)", fontWeight: 700, color: "#ccc", marginBottom: 3 }}>{t}</div>
-                      <div style={{ fontSize: "clamp(11px,1.3vw,12px)", color: "#444", lineHeight: 1.6 }}>{d}</div>
+                      <div style={{ fontSize:"clamp(12px,1.5vw,13px)", fontWeight:700, color:"#ccc", marginBottom:3 }}>{t}</div>
+                      <div style={{ fontSize:"clamp(11px,1.3vw,12px)", color:"#444", lineHeight:1.6 }}>{d}</div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div style={{ background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 18, padding: "clamp(18px,2.5vw,24px)" }}>
-                <h3 style={{ fontSize: "clamp(13px,1.6vw,15px)", fontWeight: 800, color: "#fff", margin: "0 0 16px", fontFamily: "'Space Grotesk',sans-serif" }}>Connect Online</h3>
+              {/* Social profiles */}
+              <div style={{ background:"#0d0d0d", border:"1px solid #1a1a1a", borderRadius:18, padding:"clamp(18px,2.5vw,24px)" }}>
+                <h3 style={{ fontSize:"clamp(13px,1.6vw,15px)", fontWeight:800, color:"#fff", margin:"0 0 16px", fontFamily:"'Space Grotesk',sans-serif" }}>Connect Online</h3>
                 {[
-                  { icon: "github",   label: "GitHub",      sub: "github.com/OBTECH100",                  href: "https://github.com/OBTECH100",                                  c: "#ddd"    },
-                  { icon: "linkedin", label: "LinkedIn",    sub: "linkedin.com/in/oluwasegun-boluwatife",  href: "https://www.linkedin.com/in/oluwasegun-boluwatife-9103a9289",   c: "#0A66C2" },
-                  { icon: "whatsapp", label: "WhatsApp",    sub: "+234 811 967 3231",                      href: "https://wa.me/2348119673231",                                   c: "#25D366" },
-                  { icon: "twitter",  label: "X (Twitter)", sub: "x.com/OBTECH100",                       href: "https://x.com/OBTECH100",                                      c: "#fff"    },
-                  { icon: "mail",     label: "Email",       sub: "obtech100@gmail.com",                    href: "mailto:obtech100@gmail.com",                                    c: ORANGE    },
-                  { icon: "phone",    label: "Phone",       sub: "+234 811 967 3231",                      href: "tel:+2348119673231",                                            c: "#00C896" },
+                  { icon:"github",   label:"GitHub",   sub:"github.com/OBTECH100",                href:"https://github.com/OBTECH100",                                               c:"#ddd"    },
+                  { icon:"linkedin", label:"LinkedIn", sub:"linkedin.com/in/oluwasegun-boluwatife", href:"https://www.linkedin.com/in/oluwasegun-boluwatife-9103a9289",             c:"#0A66C2" },
+                  { icon:"whatsapp", label:"WhatsApp", sub:"+234 811 967 3231",                   href:"https://wa.me/2348119673231",                                               c:"#25D366" },
+                  { icon:"twitter",  label:"X (Twitter)", sub:"x.com/@adekoyasegun200",                href:"https://x.com/@adekoyasegun200",                                                    c:"#fff"    },
+                  { icon:"mail",     label:"Email",    sub:"obtech100@gmail.com",                href:"mailto:obtech100@gmail.com",                                                 c:ORANGE    },
+                  { icon:"phone",    label:"Phone",    sub:"+234 811 967 3231",                  href:"tel:+2348119673231",                                                         c:"#00C896" },
                 ].map(({ icon, label, sub, href, c }) => {
                   const [hov, setHov] = useState(false);
                   return (
-                    <a key={label} href={href} target="_blank" rel="noopener noreferrer" onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", marginBottom: 8, background: hov ? `${c}0E` : "#111", border: `1px solid ${hov ? c+"40" : "#1e1e1e"}`, borderRadius: 11, textDecoration: "none", transition: "all .22s", transform: hov ? "translateX(4px)" : "translateX(0)" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 9, background: hov ? `${c}18` : `${c}10`, border: `1px solid ${hov ? c+"45" : c+"20"}`, display: "flex", alignItems: "center", justifyContent: "center", color: c, flexShrink: 0, fontSize: 16 }}>
+                    <a key={label} href={href} target="_blank" rel="noopener noreferrer" onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+                      style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 14px", marginBottom:8, background: hov?`${c}0E`:"#111", border:`1px solid ${hov?c+"40":"#1e1e1e"}`, borderRadius:11, textDecoration:"none", transition:"all .22s", transform: hov?"translateX(4px)":"translateX(0)" }}>
+                      <div style={{ width:36, height:36, borderRadius:9, background: hov?`${c}18`:`${c}10`, border:`1px solid ${hov?c+"45":c+"20"}`, display:"flex", alignItems:"center", justifyContent:"center", color:c, flexShrink:0, transition:"all .22s", fontSize:16 }}>
                         {I[icon]}
                       </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: hov ? "#fff" : "#aaa" }}>{label}</div>
-                        <div style={{ fontSize: 10, color: "#3a3a3a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+                      <div style={{ minWidth:0, flex:1 }}>
+                        <div style={{ fontSize:11, fontWeight:700, color: hov?"#fff":"#aaa", transition:"color .22s" }}>{label}</div>
+                        <div style={{ fontSize:10, color:"#3a3a3a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sub}</div>
                       </div>
                       <Icon name="arrow" size={12} />
                     </a>
@@ -677,34 +645,44 @@ export default function Contact() {
                 })}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "clamp(14px,2.5vw,18px)", background: "rgba(0,200,100,.05)", border: "1px solid rgba(0,200,100,.15)", borderRadius: 14 }}>
-                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#00C864", boxShadow: "0 0 12px #00C864", flexShrink: 0, animation: "pulse 2s ease infinite" }} />
+              {/* Availability badge */}
+              <div style={{ display:"flex", alignItems:"center", gap:12, padding:"clamp(14px,2.5vw,18px)", background:"rgba(0,200,100,.05)", border:"1px solid rgba(0,200,100,.15)", borderRadius:14 }}>
+                <span style={{ width:10, height:10, borderRadius:"50%", background:"#00C864", boxShadow:"0 0 12px #00C864", flexShrink:0, animation:"pulse 2s ease infinite" }} />
                 <div>
-                  <div style={{ fontSize: "clamp(12px,1.5vw,13px)", fontWeight: 700, color: "#00C864" }}>Currently Available</div>
-                  <div style={{ fontSize: "clamp(10px,1.2vw,11px)", color: "#3a3a3a", marginTop: 2 }}>Open to projects, contracts &amp; collaborations</div>
+                  <div style={{ fontSize:"clamp(12px,1.5vw,13px)", fontWeight:700, color:"#00C864" }}>Currently Available</div>
+                  <div style={{ fontSize:"clamp(10px,1.2vw,11px)", color:"#3a3a3a", marginTop:2 }}>Open to projects, contracts &amp; collaborations</div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
       </div>
 
-      {/* FAQ */}
-      <div className="section-pad" style={{ background: "#0a0a0a" }}>
+      {/* ══ FAQ ═══════════════════════════════════ */}
+      <div className="section-pad" style={{ background:"#0a0a0a" }}>
         <div className="container">
-          <div style={{ display: "grid", gridTemplateColumns: w >= 840 ? "280px 1fr" : "1fr", gap: "clamp(32px,5vw,64px)", alignItems: "start" }}>
-            <div style={{ position: w >= 840 ? "sticky" : "static", top: 88 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 14, fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", color: ORANGE, textTransform: "uppercase", padding: "4px 13px", border: `1px solid ${ORANGE}35`, borderRadius: 99, background: `${ORANGE}0E` }}>FAQ</div>
-              <h2 style={{ fontSize: "clamp(20px,3vw,28px)", fontWeight: 900, color: "#fff", margin: "0 0 12px", fontFamily: "'Space Grotesk',sans-serif", lineHeight: 1.2 }}>Frequently Asked Questions</h2>
-              <p style={{ fontSize: "clamp(12px,1.5vw,13px)", color: "#444", lineHeight: 1.8, margin: "0 0 22px" }}>Don't see your question? Email me directly.</p>
+          <div style={{ display:"grid", gridTemplateColumns: w>=840?"280px 1fr":"1fr", gap:"clamp(32px,5vw,64px)", alignItems:"start" }}>
+
+            {/* Sticky left heading */}
+            <div style={{ position: w>=840?"sticky":"static", top:88 }}>
+              <div style={{ display:"inline-flex", alignItems:"center", gap:8, marginBottom:14, fontSize:11, fontWeight:700, letterSpacing:"0.16em", color:ORANGE, textTransform:"uppercase", padding:"4px 13px", border:`1px solid ${ORANGE}35`, borderRadius:99, background:`${ORANGE}0E` }}>FAQ</div>
+              <h2 style={{ fontSize:"clamp(20px,3vw,28px)", fontWeight:900, color:"#fff", margin:"0 0 12px", fontFamily:"'Space Grotesk',sans-serif", lineHeight:1.2 }}>
+                Frequently Asked Questions
+              </h2>
+              <p style={{ fontSize:"clamp(12px,1.5vw,13px)", color:"#444", lineHeight:1.8, margin:"0 0 22px" }}>
+                Don't see your question? Email me directly.
+              </p>
               <a href="mailto:obtech100@gmail.com"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 17px", background: `${ORANGE}0E`, border: `1px solid ${ORANGE}30`, borderRadius: 9, fontSize: 13, fontWeight: 700, color: ORANGE, textDecoration: "none" }}
-                onMouseEnter={e => e.currentTarget.style.background = `${ORANGE}1C`}
-                onMouseLeave={e => e.currentTarget.style.background = `${ORANGE}0E`}
+                style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"9px 17px", background:`${ORANGE}0E`, border:`1px solid ${ORANGE}30`, borderRadius:9, fontSize:13, fontWeight:700, color:ORANGE, textDecoration:"none", transition:"background .2s" }}
+                onMouseEnter={e=>e.currentTarget.style.background=`${ORANGE}1C`}
+                onMouseLeave={e=>e.currentTarget.style.background=`${ORANGE}0E`}
               >
-                <Icon name="mail" size={14} /> Email Me
+                <Icon name="mail" size={14}/> Email Me
               </a>
             </div>
+
+            {/* Accordion */}
             <div>
               {FAQS.map((faq, i) => <FAQ key={i} {...faq} index={i} />)}
             </div>
