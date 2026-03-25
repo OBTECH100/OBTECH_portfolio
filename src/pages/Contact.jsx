@@ -47,7 +47,7 @@ const PROVIDER_TYPOS = {
   "yahoo.con": "yahoo.com", "yahoo.c": "yahoo.com", "yhoo.com": "yahoo.com",
   // hotmail
   "hotmai.com": "hotmail.com", "hotmial.com": "hotmail.com", "hotmal.com": "hotmail.com",
-  "hotmali.com": "hotmail.com", "homail.com": "hotmail.com", "hotmil.com": "hotmail.com",
+  "hotmali.com": "hotmail.com", "homail.com": "hotmail.com",
   "hotmail.co": "hotmail.com", "hotmail.c": "hotmail.com", "hotmil.com": "hotmail.com",
   // outlook
   "outlok.com": "outlook.com", "outloo.com": "outlook.com", "outloook.com": "outlook.com",
